@@ -1,166 +1,241 @@
-"""
-MotherDuck Connection Manager
-=============================
-Singleton connection manager for MotherDuck (DuckDB cloud) database.
-Provides helper methods to read tables, list tables, describe schemas,
-and execute queries.
-"""
+from __future__ import annotations
 
 import os
+from pathlib import Path
+from typing import List
+
 import duckdb
 import pandas as pd
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+
+BASE_DIR = Path(__file__).resolve().parent
+ENV_PATH = BASE_DIR / ".env"
+DATA_DIR = BASE_DIR / "data"
+EXCEL_PATH = DATA_DIR / "MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx"
+DEFAULT_SCHEMA = "main"
 
 
-class MotherDuckConnector:
-    """Singleton connection manager for MotherDuck database."""
+def quote_identifier(identifier: str) -> str:
+    """
+    Quote SQL identifiers safely for DuckDB/MotherDuck.
 
-    _instance = None
-    _connection = None
+    Needed because:
+    - Database name may contain spaces, e.g. OPC Database
+    - Sheet names start with numbers, e.g. 04_CONTRACTS
+    """
+    return '"' + identifier.replace('"', '""') + '"'
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
 
-    def __init__(self):
-        if self._connection is None:
-            self._connect()
+class MotherDuckExcelUploader:
+    """
+    Handles MotherDuck connection and Excel sheet upload.
+    """
 
-    def _connect(self):
-        """Establish connection to MotherDuck."""
-        token = os.getenv("MOTHERDUCK_TOKEN")
-        self._db_name = os.getenv("MOTHERDUCK_DATABASE", "OPC Database")
+    def __init__(self, excel_path: Path = EXCEL_PATH):
+        load_dotenv(ENV_PATH)
 
-        if not token:
+        self.token = os.getenv("MOTHERDUCK_TOKEN")
+        self.database_name = os.getenv("MOTHERDUCK_DATABASE", "OPC Database")
+        self.excel_path = excel_path
+        self.connection: duckdb.DuckDBPyConnection | None = None
+
+        if not self.token:
             raise ValueError(
-                "MOTHERDUCK_TOKEN is not set. "
-                "Please add it to your .env file."
+                "Missing MOTHERDUCK_TOKEN in .env. "
+                "Please add MOTHERDUCK_TOKEN before running this script."
             )
 
-        os.environ["motherduck_token"] = token
+        if not self.database_name:
+            raise ValueError(
+                "Missing MOTHERDUCK_DATABASE in .env. "
+                "Please add MOTHERDUCK_DATABASE before running this script."
+            )
 
-        try:
-            # Connect to MotherDuck without specifying db in connection string
-            # then USE the database explicitly for reliability
-            self._connection = duckdb.connect("md:")
-            self._connection.sql(f'USE "{self._db_name}"')
-            print(f"✅ Connected to MotherDuck database: {self._db_name}")
-        except Exception as e:
-            self._connection = None
-            raise ConnectionError(f"Failed to connect to MotherDuck: {e}")
+        os.environ["motherduck_token"] = self.token
 
-    @property
-    def connection(self):
-        """Get the active DuckDB connection, reconnecting if needed."""
-        if self._connection is None:
-            self._connect()
-        # Test connection is still alive
-        try:
-            self._connection.sql("SELECT 1")
-        except Exception:
-            print("⚠️ Connection lost, reconnecting...")
-            self._connection = None
-            self._connect()
-        return self._connection
-
-    def list_tables(self) -> list[str]:
-        """List all tables in the database.
-
-        Returns:
-            List of table names.
+    def connect(self) -> duckdb.DuckDBPyConnection:
         """
-        try:
-            result = self.connection.sql(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'main' AND table_type = 'BASE TABLE' "
-                "ORDER BY table_name"
-            ).fetchdf()
-            return result["table_name"].tolist()
-        except Exception:
-            # Fallback to SHOW TABLES if information_schema doesn't work
-            result = self.connection.sql("SHOW TABLES").fetchdf()
-            col = result.columns[0]  # Use first column regardless of name
-            return result[col].tolist()
-
-    def describe_table(self, table_name: str) -> pd.DataFrame:
-        """Describe the schema of a table (columns, types, nullable).
-
-        Args:
-            table_name: Name of the table to describe.
-
-        Returns:
-            DataFrame with column_name, column_type, null info.
+        Connect to MotherDuck and select the target database.
+        If the database does not exist, create it.
         """
-        # Sanitize table name to prevent SQL injection
-        safe_name = table_name.replace('"', '""')
-        result = self.connection.sql(f'DESCRIBE "{safe_name}"').fetchdf()
-        return result
+        if self.connection is None:
+            print("Connecting to MotherDuck...")
 
-    def read_table(self, table_name: str, limit: int = 100) -> pd.DataFrame:
-        """Read data from a table with an optional row limit.
+            self.connection = duckdb.connect("md:")
 
-        Args:
-            table_name: Name of the table to read.
-            limit: Maximum number of rows to return (default 100).
+            self.connection.sql(
+                f"CREATE DATABASE IF NOT EXISTS {quote_identifier(self.database_name)}"
+            )
 
-        Returns:
-            DataFrame with the table data.
+            self.connection.sql(
+                f"USE {quote_identifier(self.database_name)}"
+            )
+
+            print(f"Connected to database: {self.database_name}")
+
+        return self.connection
+
+    def close(self) -> None:
         """
-        safe_name = table_name.replace('"', '""')
-        limit = min(max(1, limit), 10000)  # Clamp between 1 and 10000
-        result = self.connection.sql(
-            f'SELECT * FROM "{safe_name}" LIMIT {limit}'
+        Close the MotherDuck connection.
+        """
+        if self.connection is not None:
+            self.connection.close()
+            self.connection = None
+            print("Connection closed.")
+
+    def list_tables(self) -> List[str]:
+        """
+        Return all base tables in schema main.
+        """
+        conn = self.connect()
+
+        tables_df = conn.sql(
+            f"""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = '{DEFAULT_SCHEMA}'
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+            """
         ).fetchdf()
-        return result
 
-    def execute_query(self, sql: str) -> pd.DataFrame:
-        """Execute a SQL query and return results as DataFrame.
+        return tables_df["table_name"].tolist()
 
-        Args:
-            sql: The SQL query to execute.
-
-        Returns:
-            DataFrame with query results.
+    def drop_all_tables_in_main(self) -> None:
         """
-        result = self.connection.sql(sql).fetchdf()
-        return result
-
-    def execute_write(self, sql: str) -> str:
-        """Execute a write SQL statement (INSERT, UPDATE).
-
-        Args:
-            sql: The SQL statement to execute.
-
-        Returns:
-            Success message with affected rows info.
+        Drop all existing tables in schema main.
+        This does not drop the database.
         """
-        self.connection.sql(sql)
-        return "Query executed successfully."
+        conn = self.connect()
+        table_names = self.list_tables()
 
-    def close(self):
-        """Close the database connection."""
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
-            MotherDuckConnector._instance = None
-            print("🔌 Connection closed.")
+        if not table_names:
+            print("No existing tables found in schema main.")
+            return
+
+        print(f"Found {len(table_names)} existing tables in schema main.")
+        print("Dropping old tables...")
+
+        for table_name in table_names:
+            print(f"  DROP TABLE {table_name}")
+            conn.sql(
+                f"DROP TABLE IF EXISTS {quote_identifier(DEFAULT_SCHEMA)}.{quote_identifier(table_name)}"
+            )
+
+        print("All old tables dropped.")
+
+    def get_excel_sheet_names(self) -> List[str]:
+        """
+        Read and return all sheet names from the Excel file.
+        """
+        if not self.excel_path.exists():
+            raise FileNotFoundError(
+                f"Excel file not found:\n{self.excel_path}\n\n"
+                "Please put the Excel file inside the data folder."
+            )
+
+        excel_file = pd.ExcelFile(self.excel_path)
+        return excel_file.sheet_names
+
+    def upload_sheet(self, sheet_name: str, index: int) -> None:
+        """
+        Upload one Excel sheet as one MotherDuck table.
+        Table name = sheet name.
+        """
+        conn = self.connect()
+
+        df = pd.read_excel(
+            self.excel_path,
+            sheet_name=sheet_name,
+            dtype=object,
+        )
+
+        # Preserve raw data. Only convert pandas NaN to database NULL.
+        df = df.where(pd.notnull(df), None)
+
+        temp_view_name = f"_temp_upload_view_{index}"
+
+        try:
+            conn.register(temp_view_name, df)
+
+            conn.sql(
+                f"""
+                CREATE TABLE {quote_identifier(DEFAULT_SCHEMA)}.{quote_identifier(sheet_name)} AS
+                SELECT *
+                FROM {quote_identifier(temp_view_name)}
+                """
+            )
+
+            row_count = conn.sql(
+                f"""
+                SELECT COUNT(*) AS row_count
+                FROM {quote_identifier(DEFAULT_SCHEMA)}.{quote_identifier(sheet_name)}
+                """
+            ).fetchone()[0]
+
+            column_count = len(df.columns)
+
+            print(f"Uploaded {sheet_name}: {row_count} rows, {column_count} columns")
+
+        finally:
+            try:
+                conn.unregister(temp_view_name)
+            except Exception:
+                pass
+
+    def upload_all_sheets(self) -> None:
+        """
+        Upload all sheets from the Excel file to MotherDuck.
+        """
+        sheet_names = self.get_excel_sheet_names()
+
+        print(f"Excel file: {self.excel_path}")
+        print(f"Found {len(sheet_names)} sheets:")
+        for sheet_name in sheet_names:
+            print(f"  - {sheet_name}")
+
+        print("Uploading sheets...")
+
+        for index, sheet_name in enumerate(sheet_names, start=1):
+            print(f"[{index}/{len(sheet_names)}] Uploading {sheet_name}")
+            self.upload_sheet(sheet_name=sheet_name, index=index)
+
+        print("All sheets uploaded successfully.")
+
+    def reload_from_excel(self) -> None:
+        """
+        Main flow:
+        1. Connect to MotherDuck
+        2. Drop old tables in schema main
+        3. Upload all sheets from Excel
+        4. Print final table list
+        """
+        self.connect()
+
+        print("\nSTEP 1 - Drop old tables")
+        self.drop_all_tables_in_main()
+
+        print("\nSTEP 2 - Upload Excel sheets")
+        self.upload_all_sheets()
+
+        print("\nSTEP 3 - Verify uploaded tables")
+        tables = self.list_tables()
+
+        print(f"Total tables after upload: {len(tables)}")
+        for table_name in tables:
+            print(f"  - {table_name}")
 
 
-def get_connector() -> MotherDuckConnector:
-    """Get or create the singleton MotherDuckConnector instance.
+def main() -> None:
+    uploader = MotherDuckExcelUploader()
 
-    Returns:
-        The MotherDuckConnector singleton instance.
-    """
-    return MotherDuckConnector()
+    try:
+        uploader.reload_from_excel()
+    finally:
+        uploader.close()
 
 
-# Quick test when run directly
 if __name__ == "__main__":
-    conn = get_connector()
-    print("\n📋 Tables:", conn.list_tables())
-    conn.close()
+    main()
