@@ -1206,6 +1206,7 @@
 
         // Load table list on page load
         async function loadTables() {
+            if (!tableSelect || !content) return;
             tableSelect.innerHTML = '<option value="">⏳ Đang tải...</option>';
             try {
                 const res = await fetch('/api/tables?_t=' + Date.now());
@@ -1229,6 +1230,7 @@
         }
 
         async function loadData() {
+            if (!tableSelect || !limitInput || !maskToggle || !loadBtn || !content) return;
             const table = tableSelect.value;
             if (!table) { alert('Vui lòng chọn một bảng!'); return; }
 
@@ -1327,5 +1329,5 @@
         }
 
         // Init
-        loadTables();
+        if (tableSelect) loadTables();
         loadOpportunities();
