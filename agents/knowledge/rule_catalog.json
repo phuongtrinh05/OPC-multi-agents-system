@@ -1,0 +1,232 @@
+{
+  "catalog_name": "OPC Opportunity Knowledge Rule Catalog",
+  "version": "2026-07-04",
+  "purpose": "Single source of business rules that agents must read before reasoning. Python code may compute guardrail flags, but agents must cite these rule IDs when explaining decisions.",
+  "entities": {
+    "contract": "04_CONTRACTS",
+    "customer": "03_CUSTOMERS",
+    "product": "05_PRODUCTS",
+    "order": "06_ORDERS",
+    "invoice": "07_INVOICES",
+    "bank_transaction": "08_BANK_TXN",
+    "cashflow": "09_CASHFLOW",
+    "credit_profile": "10_CREDIT_PROFILE",
+    "bank_product": "11_BANK_PRODUCTS",
+    "risk_rule_sheet": "13_RISK_RULES",
+    "alert": "14_ALERTS"
+  },
+  "rules": [
+    {
+      "rule_id": "OPP-001",
+      "name": "Opportunity candidate contract",
+      "owner_agent": "Data Intake & Screening Agent",
+      "source": "Business flow step 1",
+      "inputs": ["04_CONTRACTS.status"],
+      "condition": "status is Negotiation or Pending expansion",
+      "output": "contract is a core opportunity for founder review",
+      "evidence_required": ["contract_id", "status"]
+    },
+    {
+      "rule_id": "DATA-001",
+      "name": "Data readiness status",
+      "owner_agent": "Data Intake & Screening Agent",
+      "source": "Business flow section 2.1",
+      "inputs": ["04_CONTRACTS", "03_CUSTOMERS", "06_ORDERS", "05_PRODUCTS"],
+      "condition": "Missing core contract/customer values means Incomplete; missing orders/service link means Low Confidence; otherwise Ready",
+      "output": "data_readiness_status",
+      "evidence_required": ["contract_value", "gross_margin", "payment_terms", "customer_id", "order_ids", "service_ids"]
+    },
+    {
+      "rule_id": "CUST-001",
+      "name": "Payment reliability band",
+      "owner_agent": "Data Intake & Screening Agent",
+      "source": "Business flow section 3.1.1",
+      "inputs": ["03_CUSTOMERS.payment_reliability"],
+      "condition": ">= 0.675 High; 0.50 to <0.675 Medium; <0.50 Low",
+      "output": "payment_reliability_band",
+      "evidence_required": ["payment_reliability"]
+    },
+    {
+      "rule_id": "CUST-002",
+      "name": "Customer payment risk",
+      "owner_agent": "Data Intake & Screening Agent",
+      "source": "Business flow section 3.1.3",
+      "inputs": ["payment_reliability_band", "07_INVOICES.status", "07_INVOICES.due_date"],
+      "condition": "High reliability and no overdue invoice means Low risk; Medium reliability without overdue means Medium; Low reliability or any overdue invoice means High; Unknown reliability means Unknown",
+      "output": "customer_payment_risk",
+      "evidence_required": ["payment_reliability_band", "has_overdue_invoice"]
+    },
+    {
+      "rule_id": "CASHFLOW-001",
+      "name": "Revenue cadence mismatch",
+      "owner_agent": "Data & Finance Agent",
+      "source": "Business flow section 3.2.3",
+      "inputs": ["05_PRODUCTS.pricing_model", "04_CONTRACTS.payment_terms"],
+      "condition": "Monthly subscription service with non-Monthly payment creates revenue cadence mismatch",
+      "output": "revenue_cadence_mismatch_flag",
+      "evidence_required": ["pricing_model", "payment_terms"]
+    },
+    {
+      "rule_id": "MARGIN-001",
+      "name": "Service-specific low margin flag",
+      "owner_agent": "Data Intake & Screening Agent",
+      "source": "Business flow section 3.2.1",
+      "inputs": ["04_CONTRACTS.gross_margin", "05_PRODUCTS.target_margin", "06_ORDERS.order_revenue"],
+      "condition": "gross_margin below service-specific target margin, or weighted average target margin for multiple services",
+      "output": "low_margin_flag",
+      "evidence_required": ["gross_margin", "target_margin_ref", "target_margin_ref_source"]
+    },
+    {
+      "rule_id": "TERM-001",
+      "name": "Payment term pressure",
+      "owner_agent": "Data Intake & Screening Agent",
+      "source": "Business flow section 3.2.2",
+      "inputs": ["04_CONTRACTS.payment_terms"],
+      "condition": "Performance bond required or Possible LC/trade finance creates payment term pressure",
+      "output": "payment_terms_pressure_flag",
+      "evidence_required": ["payment_terms"]
+    },
+    {
+      "rule_id": "FEAS-001",
+      "name": "Implementation capacity risk",
+      "owner_agent": "Data Intake & Screening Agent",
+      "source": "Business flow section 3.4",
+      "inputs": ["04_CONTRACTS.description", "06_ORDERS.status", "14_ALERTS"],
+      "condition": "Large rollout scale, active alerts, At risk orders, or Delayed orders increase feasibility risk",
+      "output": "feasibility_status and capacity_risk_flag",
+      "evidence_required": ["description", "province_count", "order_statuses", "alerts"]
+    },
+    {
+      "rule_id": "FIN-001",
+      "name": "Accounts receivable exposure",
+      "owner_agent": "Data & Finance Agent",
+      "source": "Business flow step 3 branch A",
+      "inputs": ["07_INVOICES.status", "07_INVOICES.invoice_amount"],
+      "condition": "Invoices with status Not issued or Open count toward total_open_ar",
+      "output": "total_open_ar",
+      "evidence_required": ["invoice_ids", "invoice_statuses", "invoice_amounts"]
+    },
+    {
+      "rule_id": "FIN-002",
+      "name": "Cash reserve breach",
+      "owner_agent": "Data & Finance Agent",
+      "source": "Business flow step 3 branch B",
+      "inputs": ["06_ORDERS.due_date", "09_CASHFLOW.projected_closing_cash", "09_CASHFLOW.cash_reserve_minimum"],
+      "condition": "A deployment month with projected_closing_cash below cash_reserve_minimum sets cashflow_gap_flag TRUE only when the selected contract has material estimated cost in that month; smaller exposure is kept as cashflow_gap_warning_months",
+      "output": "cashflow_gap_flag, cashflow_gap_months, and cashflow_gap_warning_months",
+      "evidence_required": ["deployment_months", "projected_closing_cash", "cash_reserve_minimum", "contract_month_estimated_cost"]
+    },
+    {
+      "rule_id": "FIN-003",
+      "name": "Bank service required signal",
+      "owner_agent": "Data & Finance Agent",
+      "source": "Business flow step 3 branch C",
+      "inputs": ["04_CONTRACTS.payment_terms", "06_ORDERS.delivery_note"],
+      "condition": "Text mentions LC, trade finance, bond, letter of credit, or performance bond",
+      "output": "bank_service_required_flag",
+      "evidence_required": ["payment_terms", "delivery_note", "matched_text_signal"]
+    },
+    {
+      "rule_id": "FIN-004",
+      "name": "Funding need aggregation",
+      "owner_agent": "Data & Finance Agent",
+      "source": "Business flow step 3",
+      "inputs": ["cashflow_gap_flag", "total_open_ar", "total_estimated_cost", "bank_service_required_flag", "revenue_cadence_mismatch_flag"],
+      "condition": "cashflow_gap_flag TRUE or total_open_ar >= total_estimated_cost or bank_service_required_flag TRUE or revenue_cadence_mismatch_flag TRUE means Required; otherwise Not Needed",
+      "output": "funding_need",
+      "evidence_required": ["cashflow_gap_flag", "total_open_ar", "total_estimated_cost", "bank_service_required_flag", "revenue_cadence_mismatch_flag"]
+    },
+    {
+      "rule_id": "RISK-001",
+      "name": "RR-002 cash reserve breach activation",
+      "owner_agent": "Risk & Compliance Agent",
+      "source": "13_RISK_RULES + business flow step 4",
+      "sheet_rule_id": "RR-002",
+      "inputs": ["cashflow_gap_flag"],
+      "condition": "cashflow_gap_flag is TRUE",
+      "output": "Add RR-002 from 13_RISK_RULES; severity/action come from sheet",
+      "evidence_required": ["cashflow_gap_flag", "cashflow_gap_months"]
+    },
+    {
+      "rule_id": "RISK-002",
+      "name": "RR-003 margin below target activation",
+      "owner_agent": "Risk & Compliance Agent",
+      "source": "13_RISK_RULES + business flow step 4",
+      "sheet_rule_id": "RR-003",
+      "inputs": ["low_margin_flag"],
+      "condition": "low_margin_flag is TRUE",
+      "output": "Add RR-003 from 13_RISK_RULES; severity/action come from sheet",
+      "evidence_required": ["low_margin_flag", "gross_margin", "target_margin_ref"]
+    },
+    {
+      "rule_id": "RISK-003",
+      "name": "Risk level aggregation",
+      "owner_agent": "Risk & Compliance Agent",
+      "source": "Business flow step 4",
+      "inputs": ["applicable_risk_flags[].severity"],
+      "condition": "Any Critical/High severity means High; else any Medium means Medium; no flags means Low",
+      "output": "risk_level",
+      "evidence_required": ["applicable_risk_flags", "severity"]
+    },
+    {
+      "rule_id": "FINANCING-001",
+      "name": "Financing type mapping",
+      "owner_agent": "Decision & Partner Agent",
+      "source": "Business flow step 5",
+      "inputs": ["funding_need", "payment_terms"],
+      "condition": "Not Needed -> None; Performance bond required -> Performance Bond; Possible LC/trade finance -> LC / Trade Finance; Monthly/Milestone payment with Required funding -> Working Capital",
+      "output": "financing_need_type",
+      "evidence_required": ["funding_need", "payment_terms"]
+    },
+    {
+      "rule_id": "PARTNER-001",
+      "name": "Credit profile reuse",
+      "owner_agent": "Decision & Partner Agent",
+      "source": "Business flow step 5",
+      "inputs": ["10_CREDIT_PROFILE", "contract_id", "financing_need_type"],
+      "condition": "Prefer existing credit case matched by contract_id; otherwise semantic request_type match; otherwise derive requested_amount from open AR minus margin buffer",
+      "output": "matched_credit_case_id, requested_amount, eligibility_score",
+      "evidence_required": ["contract_id", "request_type", "requested_amount", "eligibility_score"]
+    },
+    {
+      "rule_id": "PARTNER-002",
+      "name": "Bank product match",
+      "owner_agent": "Decision & Partner Agent",
+      "source": "Business flow step 6",
+      "inputs": ["11_BANK_PRODUCTS", "financing_need_type", "requested_amount", "customer_type"],
+      "condition": "Filter bank products by financing keyword, minimum_amount, and target_segment fit",
+      "output": "banking_fit_hint, matched_bank_product_id, confidence_score",
+      "evidence_required": ["product_name", "minimum_amount", "target_segment", "customer_type"]
+    },
+    {
+      "rule_id": "DECISION-001",
+      "name": "Founder-facing recommendation guardrail",
+      "owner_agent": "Decision & Partner Agent",
+      "source": "Business flow step 7",
+      "inputs": ["risk_level", "banking_fit_hint", "eligibility_score"],
+      "condition": "Low risk can Accept; Medium risk can Accept or Conditional Accept depending banking fit; High risk requires suitable bank fit and eligibility_score >= 0.60 for Conditional Accept; otherwise Reject",
+      "output": "recommendation",
+      "evidence_required": ["risk_level", "banking_fit_hint", "eligibility_score"]
+    },
+    {
+      "rule_id": "HITL-001",
+      "name": "Founder final approval authority",
+      "owner_agent": "Orchestrator",
+      "source": "Business flow step 9",
+      "inputs": ["decision_card.recommendation", "founder_note"],
+      "condition": "Agent recommendation is advisory only; Founder must approve or reject final decision",
+      "output": "founder_final_approval",
+      "evidence_required": ["recommendation", "founder_note"]
+    },
+    {
+      "rule_id": "HITL-002",
+      "name": "External release gate",
+      "owner_agent": "Orchestrator",
+      "source": "Business flow step 10",
+      "inputs": ["founder_final_approval", "financing_need_type", "matched_bank_product_id"],
+      "condition": "Only trigger external release when Founder approved and there is a partner payload to send outside OPC",
+      "output": "external_release_gate_required",
+      "evidence_required": ["founder_final_approval", "financing_need_type", "matched_bank_product_id"]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+<section class="agent-workbench">
+    <div class="agent-toolbar opportunity-hero">
+        <div class="opportunity-picker">
+            <label><i class="bi bi-database"></i> Opportunity</label>
+            <select id="opportunitySelect" class="opportunity-select" onchange="loadSelectedOpportunityPreview()">
+                <option value="">-- Đang tải cơ hội... --</option>
+            </select>
+        </div>
+        <div class="opportunity-status-pill is-hidden" id="opportunityStatusPill">
+            <i class="bi bi-hourglass-split"></i>
+            <span>Loading input</span>
+        </div>
+        <button class="btn-agent" id="agentRunBtn" onclick="runOpportunityAgent()">
+            <span class="spinner"></span>
+            <span class="btn-text"><i class="bi bi-lightning-charge-fill"></i> Start Workflow</span>
+        </button>
+    </div>
+    <div class="agent-output" id="agentContent"></div>
+</section>

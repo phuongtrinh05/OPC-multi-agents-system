@@ -1,0 +1,19 @@
+<template id="agent-flow-card-template">
+    <button class="agent-flow-card" type="button">
+        <span class="agent-flow-line"></span>
+        <span class="agent-flow-dot"></span>
+        <span class="agent-flow-icon"><i class="bi"></i></span>
+        <strong data-agent-title></strong>
+        <ul data-agent-bullets></ul>
+        <span class="agent-flow-hint">Click để xem output</span>
+    </button>
+</template>
+
+<div class="agent-modal" id="agentModal" onclick="closeAgentPopup(event)">
+    <div class="agent-modal-card" role="dialog" aria-modal="true">
+        <button class="agent-modal-close" type="button" onclick="closeAgentPopup()">
+            <i class="bi bi-x-lg"></i>
+        </button>
+        <div id="agentModalContent"></div>
+    </div>
+</div>

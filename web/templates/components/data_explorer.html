@@ -1,0 +1,30 @@
+<div class="controls">
+    <div class="control-group">
+        <label>Chọn bảng dữ liệu</label>
+        <select id="tableSelect">
+            <option value="">-- Đang tải danh sách... --</option>
+        </select>
+    </div>
+    <div class="control-group">
+        <label>Số dòng</label>
+        <input type="number" id="limitInput" value="100" min="1" max="10000">
+    </div>
+    <div class="control-group">
+        <div class="checkbox-group">
+            <input type="checkbox" id="maskToggle" checked>
+            <label for="maskToggle">Mask dữ liệu nhạy cảm</label>
+        </div>
+    </div>
+    <button class="btn-load" id="loadBtn" onclick="loadData()">
+        <span class="spinner"></span>
+        <span class="btn-text"><i class="bi bi-download"></i> Load Data</span>
+    </button>
+</div>
+
+<div id="content">
+    <div class="state-message" id="emptyState">
+        <div class="icon"><i class="bi bi-bar-chart"></i></div>
+        <h3>Chọn một bảng để xem dữ liệu</h3>
+        <p>Chọn bảng từ danh sách và nhấn "Load Data"</p>
+    </div>
+</div>

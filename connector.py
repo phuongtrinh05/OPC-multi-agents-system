@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from threading import RLock
 from pathlib import Path
 from typing import List
 
@@ -39,6 +40,7 @@ class MotherDuckExcelUploader:
         self.database_name = os.getenv("MOTHERDUCK_DATABASE", "OPC Database")
         self.excel_path = excel_path
         self.connection: duckdb.DuckDBPyConnection | None = None
+        self._lock = RLock()
 
         if not self.token:
             raise ValueError(
@@ -59,49 +61,87 @@ class MotherDuckExcelUploader:
         Connect to MotherDuck and select the target database.
         If the database does not exist, create it.
         """
-        if self.connection is None:
-            print("Connecting to MotherDuck...")
+        with self._lock:
+            if self.connection is None:
+                print("Connecting to MotherDuck...")
 
-            self.connection = duckdb.connect("md:")
+                self.connection = duckdb.connect("md:")
 
-            self.connection.sql(
-                f"CREATE DATABASE IF NOT EXISTS {quote_identifier(self.database_name)}"
-            )
+                self.connection.sql(
+                    f"CREATE DATABASE IF NOT EXISTS {quote_identifier(self.database_name)}"
+                )
 
-            self.connection.sql(
-                f"USE {quote_identifier(self.database_name)}"
-            )
+                self.connection.sql(
+                    f"USE {quote_identifier(self.database_name)}"
+                )
 
-            print(f"Connected to database: {self.database_name}")
+                print(f"Connected to database: {self.database_name}")
 
-        return self.connection
+            return self.connection
 
     def close(self) -> None:
         """
         Close the MotherDuck connection.
         """
-        if self.connection is not None:
-            self.connection.close()
-            self.connection = None
-            print("Connection closed.")
+        with self._lock:
+            if self.connection is not None:
+                self.connection.close()
+                self.connection = None
+                print("Connection closed.")
 
     def list_tables(self) -> List[str]:
         """
         Return all base tables in schema main.
         """
-        conn = self.connect()
+        with self._lock:
+            conn = self.connect()
 
-        tables_df = conn.sql(
-            f"""
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = '{DEFAULT_SCHEMA}'
-              AND table_type = 'BASE TABLE'
-            ORDER BY table_name
-            """
-        ).fetchdf()
+            tables_df = conn.sql(
+                f"""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = '{DEFAULT_SCHEMA}'
+                  AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+                """
+            ).fetchdf()
 
-        return tables_df["table_name"].tolist()
+            return tables_df["table_name"].tolist()
+
+    def describe_table(self, table_name: str) -> pd.DataFrame:
+        """
+        Return column metadata for a table in schema main.
+        """
+        with self._lock:
+            conn = self.connect()
+
+            return conn.sql(
+                f"DESCRIBE {quote_identifier(DEFAULT_SCHEMA)}.{quote_identifier(table_name)}"
+            ).fetchdf()
+
+    def read_table(self, table_name: str, limit: int = 100) -> pd.DataFrame:
+        """
+        Return rows from a table, capped at 10,000 rows for the web/API viewer.
+        """
+        with self._lock:
+            conn = self.connect()
+            safe_limit = max(1, min(int(limit), 10_000))
+
+            return conn.sql(
+                f"""
+                SELECT *
+                FROM {quote_identifier(DEFAULT_SCHEMA)}.{quote_identifier(table_name)}
+                LIMIT {safe_limit}
+                """
+            ).fetchdf()
+
+    def execute_query(self, sql_query: str) -> pd.DataFrame:
+        """
+        Execute a SQL query and return the result as a DataFrame.
+        """
+        with self._lock:
+            conn = self.connect()
+            return conn.sql(sql_query).fetchdf()
 
     def drop_all_tables_in_main(self) -> None:
         """
@@ -239,3 +279,18 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+_connector: MotherDuckExcelUploader | None = None
+
+
+def get_connector() -> MotherDuckExcelUploader:
+    """
+    Return the shared MotherDuck connector instance used by the web app/tools.
+    """
+    global _connector
+
+    if _connector is None:
+        _connector = MotherDuckExcelUploader()
+
+    return _connector

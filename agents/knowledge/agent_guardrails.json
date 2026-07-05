@@ -1,0 +1,96 @@
+{
+  "policy_name": "OPC Agent Reasoning Guardrails",
+  "version": "2026-07-04",
+  "purpose": "Rules every AI-assisted agent must follow to avoid hallucination, unsupported claims, and unsafe automation.",
+  "global_guardrails": [
+    {
+      "guardrail_id": "G-001",
+      "name": "Use only supplied evidence",
+      "requirement": "Agents must reason only from the input payload, MotherDuck-derived records, rule_catalog.json, and explicitly supplied sheet rows. Do not invent contracts, customers, bank products, risk rules, dates, amounts, or policies."
+    },
+    {
+      "guardrail_id": "G-002",
+      "name": "Cite field-level evidence",
+      "requirement": "Every material conclusion must cite evidence_used as field=value strings, for example cashflow_gap_flag=true or 04_CONTRACTS.payment_terms=Possible LC/trade finance."
+    },
+    {
+      "guardrail_id": "G-003",
+      "name": "Read rule catalog before decision",
+      "requirement": "Before outputting a risk, financing, partner, or decision result, agents must map their conclusion to one or more rule_id values from rule_catalog.json or sheet rule IDs from 13_RISK_RULES."
+    },
+    {
+      "guardrail_id": "G-004",
+      "name": "Double-check output against original fields",
+      "requirement": "Before final JSON output, agents must verify that selected rule IDs and recommendations are consistent with source fields. If a conclusion depends on a missing/ambiguous field, list it in missing_info instead of guessing."
+    },
+    {
+      "guardrail_id": "G-005",
+      "name": "No hidden final authority",
+      "requirement": "Agents never finalize contracts or external releases. They only recommend. Founder/HITL approval is required for final approval and external release."
+    },
+    {
+      "guardrail_id": "G-006",
+      "name": "Conservative uncertainty handling",
+      "requirement": "When evidence is incomplete, conflicting, or low confidence, choose the safer interpretation: Need Clarification, Conditional Accept, Reject, or require Founder review. Do not upgrade to Accept without strong evidence."
+    },
+    {
+      "guardrail_id": "G-007",
+      "name": "Structured JSON only",
+      "requirement": "AI-assisted agent outputs must be valid JSON matching the expected schema. Do not return markdown, prose-only answers, or chain-of-thought."
+    },
+    {
+      "guardrail_id": "G-008",
+      "name": "No private chain-of-thought",
+      "requirement": "Do not expose private chain-of-thought. Provide concise reasoning_summary, rule_interpretation, evidence_used, tradeoffs, and missing_info."
+    },
+    {
+      "guardrail_id": "G-009",
+      "name": "Python guardrail remains authoritative",
+      "requirement": "If AI output conflicts with deterministic mandatory flags, source data, or hard safety constraints, Python validation must keep or downgrade to the safer result."
+    }
+  ],
+  "agent_specific_guardrails": {
+    "Data & Finance Agent": [
+      "Build Opportunity Profile from MotherDuck contract, customer, order, invoice, transaction, and cashflow records.",
+      "Run AI/NLP as an internal tool only after the finance evidence payload is compact.",
+      "Extract text signals from contract description, payment_terms, and delivery_note.",
+      "Do not override numeric fields unless evidence exists in input text or data.",
+      "If provider call fails, mark ai_used=false and use fallback reasoning."
+    ],
+    "Risk & Compliance Agent": [
+      "Read risk_rule_catalog and 13_RISK_RULES rows before selecting risk rules.",
+      "Do not invent rule IDs. Only use rule IDs present in 13_RISK_RULES or rule_catalog.json.",
+      "If cashflow_gap_flag=true, RR-002 must remain selected even if AI omits it.",
+      "If low_margin_flag=true, RR-003 must remain selected even if AI omits it."
+    ],
+    "Decision & Partner Agent": [
+      "Read financing, credit profile, bank product, risk output, and rule_catalog before recommending.",
+      "Do not recommend Accept when deterministic guardrail says Conditional Accept or Reject.",
+      "AI may make the recommendation more conservative, but Python must block unsafe upgrades.",
+      "Founder final approval remains required even when recommendation is Accept."
+    ],
+    "Orchestrator": [
+      "Run agents in business order.",
+      "Stop at every HITL gate until human action is supplied.",
+      "Do not trigger external release unless Founder final approval is Approved and external_release_gate_required=true."
+    ]
+  },
+  "required_ai_output_fields": {
+    "risk_agent": [
+      "applicable_rule_ids",
+      "reasoning_summary",
+      "rule_interpretation",
+      "evidence_used",
+      "missing_info",
+      "confidence"
+    ],
+    "decision_agent": [
+      "recommendation",
+      "reasoning_summary",
+      "evidence_used",
+      "tradeoffs",
+      "missing_info",
+      "confidence"
+    ]
+  }
+}

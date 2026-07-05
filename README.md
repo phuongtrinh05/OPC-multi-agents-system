@@ -1,6 +1,6 @@
 # OPC Multi-Agents System
 
-Hệ thống xem và quản lý dữ liệu từ **MotherDuck** (DuckDB Cloud) với tính năng **tự động masking dữ liệu nhạy cảm**, giao diện web, và framework LangGraph AI Agent sẵn sàng tích hợp.
+Hệ thống xem và quản lý dữ liệu từ **MotherDuck** (DuckDB Cloud), tự động masking dữ liệu nhạy cảm, giao diện web, và workflow Agentic AI cho đánh giá cơ hội kinh doanh OPC.
 
 ---
 
@@ -42,12 +42,12 @@ Dữ liệu nhạy cảm được **tự động phát hiện và che giấu** t
 - Nút **Xem Schema** để xem cấu trúc bảng
 - Giao diện dark theme, responsive
 
-### 4. 🤖 LangGraph AI Agent Framework (sẵn sàng tích hợp)
+### 4. 🤖 Agentic AI Opportunity Workflow
 
-- LangGraph workflow với ReAct pattern (file `flow.py`)
-- CRUD tool functions sẵn sàng cho agent (file `functions.py`)
-- Hỗ trợ: list tables, describe table, read table, execute SQL, insert data, update data
-- Cần OpenAI API key để kích hoạt tính năng agent
+- Multi-agent workflow trong `opportunity_agent.py` và thư mục `agents/`
+- Knowledge graph, rule catalog, guardrails và SQL tool plan cho từng agent
+- Hỗ trợ 3 agent lõi: Data & Finance, Risk & Compliance, Decision & Partner. AI/NLP reasoning là tool nội bộ của Data & Finance Agent.
+- AI provider được cấu hình trong `.env`
 
 ---
 
@@ -95,7 +95,6 @@ OPC-multi-agents-system/
 ├── .env                    # API keys (MotherDuck token + OpenAI key)
 ├── connector.py            # MotherDuck connection manager (singleton)
 ├── functions.py            # Data masking + CRUD tool functions
-├── flow.py                 # LangGraph AI agent workflow (sẵn sàng dùng)
 ├── main.py                 # Flask web server + API endpoints
 ├── templates/
 │   └── index.html          # Giao diện web data viewer
@@ -134,7 +133,6 @@ pip install -r requirement.txt
 | `pandas` | Xử lý dữ liệu DataFrame |
 | `openpyxl` | Đọc/ghi file Excel |
 | `sqlalchemy` | SQL toolkit |
-| `langgraph` | AI Agent workflow framework |
 | `langchain` | LLM integration framework |
 | `langchain-openai` | OpenAI GPT integration |
 | `flask` | Web server |
@@ -225,22 +223,6 @@ MASK_FUNCTIONS = {
     "my_type": _mask_my_type,
 }
 ```
-
-### Kích hoạt AI Agent (cần OpenAI API key)
-
-1. Điền `OPENAI_API_KEY` vào file `.env`
-2. Import và sử dụng agent trong code:
-
-```python
-from flow import build_graph
-
-agent = build_graph()
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "Liệt kê tất cả bảng"}]
-})
-```
-
----
 
 ## 📝 License
 

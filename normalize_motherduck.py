@@ -1,23 +1,3 @@
-"""
-MotherDuck Data Normalization
-=============================
-
-Chức năng:
-1. Kết nối MotherDuck thông qua connector.py
-2. Chuẩn hóa các cột ngày về DATE
-3. Chuẩn hóa các cột số/tiền/rate/score về DOUBLE
-4. Trim khoảng trắng cho các cột text
-5. Không tạo macro trong MotherDuck
-6. Không tạo bảng mới
-7. Không tạo view mới
-8. Không tạo cột mới
-9. Không đổi tên bảng
-10. Không đổi tên cột
-11. Không đổi thứ tự cột
-
-File này chạy SAU khi đã upload dữ liệu lên MotherDuck.
-"""
-
 from __future__ import annotations
 
 from typing import Dict, List
@@ -52,17 +32,12 @@ DATE_COLUMNS: Dict[str, List[str]] = {
 }
 
 
-NUMBER_COLUMNS: Dict[str, List[str]] = {
-    "03_CUSTOMERS": [
-        "payment_reliability",
-    ],
+MONEY_COLUMNS: Dict[str, List[str]] = {
     "04_CONTRACTS": [
         "contract_value",
-        "gross_margin",
     ],
     "05_PRODUCTS": [
         "list_price",
-        "target_margin",
     ],
     "06_ORDERS": [
         "order_revenue",
@@ -73,7 +48,6 @@ NUMBER_COLUMNS: Dict[str, List[str]] = {
     ],
     "08_BANK_TXN": [
         "amount",
-        "transaction_risk_score",
     ],
     "09_CASHFLOW": [
         "expected_cash_in",
@@ -85,13 +59,37 @@ NUMBER_COLUMNS: Dict[str, List[str]] = {
     ],
     "10_CREDIT_PROFILE": [
         "requested_amount",
+    ],
+    "11_BANK_PRODUCTS": [
+        "minimum_amount",
+    ],
+}
+
+
+RATIO_COLUMNS: Dict[str, List[str]] = {
+    "03_CUSTOMERS": [
+        "payment_reliability",
+    ],
+    "04_CONTRACTS": [
+        "gross_margin",
+    ],
+    "05_PRODUCTS": [
+        "target_margin",
+    ],
+    "10_CREDIT_PROFILE": [
         "eligibility_score",
     ],
     "11_BANK_PRODUCTS": [
         "annual_rate_or_fee",
         "processing_fee_rate",
         "collateral_ratio",
-        "minimum_amount",
+    ],
+}
+
+
+RISK_SCORE_COLUMNS: Dict[str, List[str]] = {
+    "08_BANK_TXN": [
+        "transaction_risk_score",
     ],
     "14_ALERTS": [
         "risk_score",
@@ -351,7 +349,8 @@ def clean_excel_date_expr(column_name: str) -> str:
 
 def clean_number_expr(column_name: str) -> str:
     """
-    Công thức inline để đổi tiền/số/rate/score sang DOUBLE.
+    Công thức inline để làm sạch tiền/số/rate/score trước khi ép kiểu.
+    Không tạo macro trong MotherDuck.
     """
     col = quote_identifier(column_name)
 
@@ -409,16 +408,16 @@ def normalize_date_columns(conn) -> None:
 
 
 # =========================
-# 5. CHUẨN HÓA NUMBER
+# 5. CHUẨN HÓA MONEY
 # =========================
 
-def normalize_number_columns(conn) -> None:
+def normalize_money_columns(conn) -> None:
     """
-    Chuẩn hóa các cột số/tiền/tỷ lệ/score sang DOUBLE.
+    Chuẩn hóa các cột tiền VND sang DECIMAL(18,0).
     """
-    print("\nSTEP 2 - Normalize NUMBER columns")
+    print("\nSTEP 2 - Normalize MONEY columns")
 
-    for table_name, columns in NUMBER_COLUMNS.items():
+    for table_name, columns in MONEY_COLUMNS.items():
         if not table_exists(conn, table_name):
             print(f"Skip missing table: {table_name}")
             continue
@@ -430,20 +429,88 @@ def normalize_number_columns(conn) -> None:
                 print(f"Skip missing column: {table_name}.{column_name}")
                 continue
 
-            print(f"DOUBLE {table_name}.{column_name}")
+            print(f"DECIMAL(18,0) {table_name}.{column_name}")
 
             conn.sql(
                 f"""
                 ALTER TABLE {full_table_name(table_name)}
                 ALTER COLUMN {quote_identifier(column_name)}
-                SET DATA TYPE DOUBLE
+                SET DATA TYPE DECIMAL(18,0)
                 USING ({clean_number_expr(column_name)})
                 """
             )
 
 
 # =========================
-# 6. TRIM TEXT
+# 6. CHUẨN HÓA RATIO
+# =========================
+
+def normalize_ratio_columns(conn) -> None:
+    """
+    Chuẩn hóa các cột tỷ lệ/margin/reliability/eligibility sang DECIMAL(5,4).
+    """
+    print("\nSTEP 3 - Normalize RATIO columns")
+
+    for table_name, columns in RATIO_COLUMNS.items():
+        if not table_exists(conn, table_name):
+            print(f"Skip missing table: {table_name}")
+            continue
+
+        existing_columns = get_existing_columns(conn, table_name)
+
+        for column_name in columns:
+            if column_name not in existing_columns:
+                print(f"Skip missing column: {table_name}.{column_name}")
+                continue
+
+            print(f"DECIMAL(5,4)  {table_name}.{column_name}")
+
+            conn.sql(
+                f"""
+                ALTER TABLE {full_table_name(table_name)}
+                ALTER COLUMN {quote_identifier(column_name)}
+                SET DATA TYPE DECIMAL(5,4)
+                USING ({clean_number_expr(column_name)})
+                """
+            )
+
+
+# =========================
+# 7. CHUẨN HÓA RISK SCORE
+# =========================
+
+def normalize_risk_score_columns(conn) -> None:
+    """
+    Chuẩn hóa các cột risk score sang DECIMAL(5,2).
+    """
+    print("\nSTEP 4 - Normalize RISK SCORE columns")
+
+    for table_name, columns in RISK_SCORE_COLUMNS.items():
+        if not table_exists(conn, table_name):
+            print(f"Skip missing table: {table_name}")
+            continue
+
+        existing_columns = get_existing_columns(conn, table_name)
+
+        for column_name in columns:
+            if column_name not in existing_columns:
+                print(f"Skip missing column: {table_name}.{column_name}")
+                continue
+
+            print(f"DECIMAL(5,2)  {table_name}.{column_name}")
+
+            conn.sql(
+                f"""
+                ALTER TABLE {full_table_name(table_name)}
+                ALTER COLUMN {quote_identifier(column_name)}
+                SET DATA TYPE DECIMAL(5,2)
+                USING ({clean_number_expr(column_name)})
+                """
+            )
+
+
+# =========================
+# 8. TRIM TEXT
 # =========================
 
 def normalize_text_columns(conn) -> None:
@@ -452,7 +519,7 @@ def normalize_text_columns(conn) -> None:
     Không đổi hoa/thường.
     Không map lại enum.
     """
-    print("\nSTEP 3 - Normalize TEXT columns")
+    print("\nSTEP 5 - Normalize TEXT columns")
 
     for table_name, columns in TEXT_COLUMNS.items():
         if not table_exists(conn, table_name):
@@ -481,14 +548,14 @@ def normalize_text_columns(conn) -> None:
 
 
 # =========================
-# 7. KIỂM TRA SAU CHUẨN HÓA
+# 9. KIỂM TRA SAU CHUẨN HÓA
 # =========================
 
 def verify_normalization(conn) -> None:
     """
     In schema một số bảng quan trọng để kiểm tra kiểu dữ liệu sau chuẩn hóa.
     """
-    print("\nSTEP 4 - Verify important table schemas")
+    print("\nSTEP 6 - Verify important table schemas")
 
     tables_to_check = [
         "03_CUSTOMERS",
@@ -513,7 +580,7 @@ def verify_normalization(conn) -> None:
 
 
 # =========================
-# 8. MAIN FLOW
+# 10. MAIN FLOW
 # =========================
 
 def main() -> None:
@@ -523,7 +590,9 @@ def main() -> None:
         conn = uploader.connect()
 
         normalize_date_columns(conn)
-        normalize_number_columns(conn)
+        normalize_money_columns(conn)
+        normalize_ratio_columns(conn)
+        normalize_risk_score_columns(conn)
         normalize_text_columns(conn)
         verify_normalization(conn)
 

@@ -3,7 +3,7 @@ python-dotenv
 pandas
 openpyxl
 sqlalchemy
-langgraph
 langchain
 langchain-openai
+httpx
 flask
