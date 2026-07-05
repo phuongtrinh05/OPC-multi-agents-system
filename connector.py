@@ -15,6 +15,7 @@ ENV_PATH = BASE_DIR / ".env"
 DATA_DIR = BASE_DIR / "data"
 EXCEL_PATH = DATA_DIR / "MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx"
 DEFAULT_SCHEMA = "main"
+DUCKDB_HOME_DIR = os.getenv("DUCKDB_HOME_DIR") or os.getenv("HOME") or os.getenv("USERPROFILE") or "/tmp"
 
 
 def _read_env_value(key: str) -> str | None:
@@ -84,7 +85,10 @@ class MotherDuckExcelUploader:
             if self.connection is None:
                 print("Connecting to MotherDuck...")
 
-                self.connection = duckdb.connect("md:")
+                self.connection = duckdb.connect(
+                    "md:",
+                    config={"home_directory": DUCKDB_HOME_DIR},
+                )
 
                 self.connection.sql(
                     f"CREATE DATABASE IF NOT EXISTS {quote_identifier(self.database_name)}"
