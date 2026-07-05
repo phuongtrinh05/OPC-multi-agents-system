@@ -17,6 +17,15 @@ EXCEL_PATH = DATA_DIR / "MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx"
 DEFAULT_SCHEMA = "main"
 DUCKDB_HOME_DIR = os.getenv("DUCKDB_HOME_DIR") or os.getenv("HOME") or os.getenv("USERPROFILE") or "/tmp"
 
+if DUCKDB_HOME_DIR:
+    Path(DUCKDB_HOME_DIR).mkdir(parents=True, exist_ok=True)
+    if not os.environ.get("HOME"):
+        os.environ["HOME"] = DUCKDB_HOME_DIR
+    if not os.environ.get("USERPROFILE"):
+        os.environ["USERPROFILE"] = DUCKDB_HOME_DIR
+    if not os.environ.get("XDG_CACHE_HOME"):
+        os.environ["XDG_CACHE_HOME"] = str(Path(DUCKDB_HOME_DIR) / ".cache")
+
 
 def _read_env_value(key: str) -> str | None:
     """Read a raw .env value when python-dotenv cannot parse a long token."""
