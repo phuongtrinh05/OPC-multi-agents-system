@@ -17,6 +17,21 @@ EXCEL_PATH = DATA_DIR / "MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx"
 DEFAULT_SCHEMA = "main"
 
 
+def _read_env_value(key: str) -> str | None:
+    """Read a raw .env value when python-dotenv cannot parse a long token."""
+    if not ENV_PATH.exists():
+        return None
+
+    prefix = f"{key}="
+    for line in ENV_PATH.read_text(encoding="utf-8-sig").splitlines():
+        if line.startswith(prefix):
+            value = line[len(prefix):].strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            return value
+    return None
+
+
 def quote_identifier(identifier: str) -> str:
     """
     Quote SQL identifiers safely for DuckDB/MotherDuck.
@@ -36,8 +51,12 @@ class MotherDuckExcelUploader:
     def __init__(self, excel_path: Path = EXCEL_PATH):
         load_dotenv(ENV_PATH)
 
-        self.token = os.getenv("MOTHERDUCK_TOKEN")
-        self.database_name = os.getenv("MOTHERDUCK_DATABASE", "OPC Database")
+        self.token = os.getenv("MOTHERDUCK_TOKEN") or _read_env_value("MOTHERDUCK_TOKEN")
+        self.database_name = (
+            os.getenv("MOTHERDUCK_DATABASE")
+            or _read_env_value("MOTHERDUCK_DATABASE")
+            or "OPC Database"
+        )
         self.excel_path = excel_path
         self.connection: duckdb.DuckDBPyConnection | None = None
         self._lock = RLock()

@@ -1,229 +1,202 @@
 # OPC Multi-Agents System
 
-Hệ thống xem và quản lý dữ liệu từ **MotherDuck** (DuckDB Cloud), tự động masking dữ liệu nhạy cảm, giao diện web, và workflow Agentic AI cho đánh giá cơ hội kinh doanh OPC.
+Demo Agentic AI cho bài MIS Talent 2026. Hệ thống hỗ trợ OPC đánh giá cơ hội kinh doanh/hợp đồng, đọc dữ liệu từ MotherDuck, phân tích nhu cầu tài chính, rà soát rủi ro và gợi ý phương án ngân hàng trước khi Founder/CEO ra quyết định cuối cùng.
 
----
+## Tính năng chính
 
-## ✅ Chức năng đã hoàn thành
+- Web app Flask để xem dữ liệu, chọn opportunity và chạy workflow.
+- Data viewer có masking dữ liệu nhạy cảm khi hiển thị.
+- Workflow 3 agent: Data & Finance, Risk & Compliance, Decision & Partner.
+- AI/NLP reasoning là tool nội bộ của Data & Finance Agent, cấu hình qua Groq.
+- Knowledge/rule context cục bộ trong `agents/knowledge/`.
+- Neo4j Aura Knowledge Graph là tùy chọn, app vẫn chạy được nếu chưa cấu hình.
 
-### 1. 🦆 Kết nối & lấy dữ liệu từ MotherDuck
+## Kiến trúc workflow
 
-- Kết nối tự động đến MotherDuck cloud database qua token xác thực
-- Singleton connection manager — tái sử dụng connection, tự động reconnect khi mất kết nối
-- **Liệt kê bảng** — Lấy danh sách tất cả bảng trong database
-- **Đọc dữ liệu** — Load dữ liệu từ bảng với giới hạn số dòng (1–10.000)
-- **Xem schema** — Mô tả cấu trúc bảng (tên cột, kiểu dữ liệu, nullable)
-- **Truy vấn SQL** — Chạy câu lệnh SQL tùy ý
+1. Data & Finance Agent nhận `contract_id`, gom dữ liệu hợp đồng, khách hàng, đơn hàng, hóa đơn, cashflow và credit profile.
+2. AI reasoning tool đọc thêm ngữ cảnh text như mô tả hợp đồng, điều khoản thanh toán và delivery note.
+3. Risk & Compliance Agent áp rule, guardrail và tín hiệu giao dịch để tạo risk score, alerts và recommended actions.
+4. Decision & Partner Agent map nhu cầu tài chính sang sản phẩm ngân hàng, tính confidence score và tạo Decision Card.
+5. Founder/CEO xem dashboard và quyết định approve, reject hoặc request more info.
 
-### 2. 🔒 Data Masking trước khi hiển thị
+## Cấu trúc thư mục
 
-Dữ liệu nhạy cảm được **tự động phát hiện và che giấu** trước khi hiển thị trên giao diện web, theo quy luật từ bảng `masking_examples`:
-
-| Loại dữ liệu | Tên cột mẫu | Dữ liệu gốc | Sau masking | Quy tắc |
-|---|---|---|---|---|
-| Mã khách hàng | `customer_id` | `CUS-005` | `CUS-***005` | Giữ prefix + 3 ký tự cuối |
-| Mã tài khoản | `account_id` | `OPC_MAIN` | `OPC_****` | Giữ prefix, che phần còn lại |
-| Tên công ty | `company_name` | `OPC Digital` | `OPC D*****` | Giữ từ đầu + ký tự đầu từ thứ 2 |
-| Giá trị tài chính | `contract_value` | `4,200,000,000` | `4.2B band` | Gom thành khoảng (K/M/B) |
-| Token/Secret | `access_token` | `eyJhbGci...` | `[SECRET]` | Che toàn bộ |
-| Email | `email` | `nguyenvana@gmail.com` | `ngu***@***.com` | Che local + domain |
-| Số điện thoại | `phone` | `0912345678` | `***5678` | Chỉ giữ 4 số cuối |
-| Tên người | `full_name` | `Nguyễn Văn An` | `Nguyễn V*** A***` | Giữ họ, che tên |
-| Địa chỉ | `address` | `123 Lê Lợi, Q1` | `12***` | Giữ 2 ký tự đầu |
-
-> Hệ thống **tự động nhận diện** cột nhạy cảm dựa trên tên cột. Có thể bật/tắt masking bằng checkbox trên giao diện.
-
-### 3. 🌐 Giao diện Web Data Viewer
-
-- Dropdown chọn bảng (tự động load danh sách từ MotherDuck)
-- Nút **Load Data** để tải dữ liệu lên bảng HTML
-- Checkbox bật/tắt masking dữ liệu nhạy cảm
-- Input giới hạn số dòng hiển thị
-- Nút **Xem Schema** để xem cấu trúc bảng
-- Giao diện dark theme, responsive
-
-### 4. 🤖 Agentic AI Opportunity Workflow
-
-- Multi-agent workflow trong `opportunity_agent.py` và thư mục `agents/`
-- Knowledge graph, rule catalog, guardrails và SQL tool plan cho từng agent
-- Hỗ trợ 3 agent lõi: Data & Finance, Risk & Compliance, Decision & Partner. AI/NLP reasoning là tool nội bộ của Data & Finance Agent.
-- AI provider được cấu hình trong `.env`
-
----
-
-## 📐 Kiến trúc hệ thống
-
-```
-┌─────────────────────────────────────────────────┐
-│  Browser (index.html)                           │
-│  ┌─────────────┐ ┌───────┐ ┌────────────────┐  │
-│  │ Dropdown     │ │ Limit │ │ ☑ Mask data    │  │
-│  │ chọn bảng    │ │  100  │ │                │  │
-│  └──────┬───────┘ └───┬───┘ └───────┬────────┘  │
-│         └─────────────┼─────────────┘            │
-│                 [Load Data]                      │
-│                       │                          │
-│  ┌────────────────────▼──────────────────────┐  │
-│  │        Bảng dữ liệu (HTML Table)         │  │
-│  └───────────────────────────────────────────┘  │
-└─────────────────────┬───────────────────────────┘
-                      │ HTTP API
-┌─────────────────────▼───────────────────────────┐
-│  Flask Server (main.py)                         │
-│  GET /api/tables    → danh sách bảng            │
-│  GET /api/table/:name → dữ liệu bảng           │
-└─────────────────────┬───────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────┐
-│  Data Masking (functions.py)                    │
-│  Auto-detect sensitive columns → apply mask     │
-└─────────────────────┬───────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────┐
-│  MotherDuck Connector (connector.py)            │
-│  Singleton connection, auto-reconnect           │
-└─────────────────────┬───────────────────────────┘
-                      │
-              ☁️ MotherDuck Cloud
-              (OPC Database)
-```
-
-## 🗂️ Cấu trúc project
-
-```
+```text
 OPC-multi-agents-system/
-├── .env                    # API keys (MotherDuck token + OpenAI key)
-├── connector.py            # MotherDuck connection manager (singleton)
-├── functions.py            # Data masking + CRUD tool functions
-├── main.py                 # Flask web server + API endpoints
-├── templates/
-│   └── index.html          # Giao diện web data viewer
-├── requirement.txt         # Python dependencies
-└── README.md               # Tài liệu này
+├── main.py                         # Flask app và API endpoints
+├── connector.py                    # Kết nối MotherDuck/DuckDB
+├── opportunity_agent.py            # Orchestrator workflow chính
+├── functions.py                    # Data masking và helper functions
+├── normalize_motherduck.py         # Script chuẩn hóa/nạp dữ liệu khi cần
+├── requirement.txt                 # Python dependencies
+├── .env.example                    # Mẫu cấu hình, không chứa secret thật
+├── agents/
+│   ├── data_finance_agent.py
+│   ├── ai_reasoning_tool.py
+│   ├── risk_compliance_agent.py
+│   ├── decision_partner_agent.py
+│   ├── ai_provider.py
+│   ├── knowledge_base.py
+│   ├── knowledge_graph.py
+│   ├── neo4j_client.py
+│   ├── shared.py
+│   └── knowledge/
+│       ├── agent_guardrails.json
+│       └── rule_catalog.json
+├── web/
+│   ├── templates/
+│   │   ├── index.html
+│   │   └── components/
+│   └── static/
+│       ├── app.css
+│       ├── app.js
+│       └── assets/opc-logo.png
+└── docs/
+    ├── AGENT_BLUEPRINT.md
+    ├── PROJECT_FILE_GUIDE.md
+    └── README.md
 ```
 
----
+## Cài đặt
 
-## 🚀 Hướng dẫn cài đặt
+Yêu cầu:
 
-### Yêu cầu hệ thống
+- Python 3.10 trở lên.
+- MotherDuck token và database đã có dữ liệu demo.
+- Groq API key nếu muốn chạy phần AI reasoning thật.
 
-- **Python** 3.10 trở lên
-- **pip** (Python package manager)
-- Tài khoản **MotherDuck** — https://motherduck.com
-- *(Tùy chọn)* **OpenAI API key** — chỉ cần nếu dùng AI Agent
+Tạo môi trường và cài thư viện:
 
-### Bước 1: Clone repository
-
-```bash
-git clone https://github.com/your-username/OPC-multi-agents-system.git
-cd OPC-multi-agents-system
-```
-
-### Bước 2: Cài đặt dependencies
-
-```bash
+```powershell
+cd D:\MIS_TALENT\OPC-multi-agents-system
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirement.txt
 ```
 
-| Package | Mục đích |
-|---------|----------|
-| `duckdb` | DuckDB database engine |
-| `python-dotenv` | Load biến môi trường từ `.env` |
-| `pandas` | Xử lý dữ liệu DataFrame |
-| `openpyxl` | Đọc/ghi file Excel |
-| `sqlalchemy` | SQL toolkit |
-| `langchain` | LLM integration framework |
-| `langchain-openai` | OpenAI GPT integration |
-| `flask` | Web server |
+Nếu PowerShell chặn activate script, chạy trong terminal hiện tại:
 
-### Bước 3: Cấu hình API keys
-
-Tạo hoặc chỉnh sửa file `.env` ở thư mục gốc project:
-
-```env
-# [BẮT BUỘC] MotherDuck token
-# Lấy tại: https://app.motherduck.com/settings/tokens
-MOTHERDUCK_TOKEN=your_motherduck_token_here
-
-# [TÙY CHỌN] OpenAI API key (chỉ cần nếu dùng AI Agent)
-# Lấy tại: https://platform.openai.com/api-keys
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Tên database trên MotherDuck
-MOTHERDUCK_DATABASE=OPC Database
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\Activate.ps1
 ```
 
-### Bước 4: Chạy ứng dụng
+## Cấu hình `.env`
 
-```bash
+Tạo file `.env` từ mẫu:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Điền tối thiểu:
+
+```env
+MOTHERDUCK_TOKEN=your_motherduck_token_here
+MOTHERDUCK_DATABASE=OPC Database
+
+AI_PROVIDER=groq
+RISK_AI_PROVIDER=groq
+DECISION_AI_PROVIDER=groq
+
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+GROQ_BASE_URL=https://api.groq.com
+GROQ_SSL_VERIFY=false
+```
+
+Neo4j là tùy chọn:
+
+```env
+NEO4J_URI=neo4j+s://your-instance.databases.neo4j.io
+NEO4J_USERNAME=your_neo4j_username_or_instance_id
+NEO4J_PASSWORD=your_neo4j_password_here
+NEO4J_DATABASE=your_database_or_instance_id
+NEO4J_QUERY_LIMIT=8
+NEO4J_TIMEOUT_SECONDS=8
+NEO4J_SSL_VERIFY=true
+```
+
+Không commit file `.env` thật vì có token/API key.
+
+## Chạy ứng dụng
+
+```powershell
 python main.py
 ```
 
-Server sẽ khởi động và hiện:
+Mở trình duyệt tại:
 
-```
-✅ Connected to MotherDuck database: OPC Database
- * Running on http://127.0.0.1:5000
-```
-
-Mở trình duyệt → truy cập **http://127.0.0.1:5000**
-
----
-
-## 💬 Hướng dẫn sử dụng
-
-### Xem dữ liệu bảng
-
-1. Mở **http://127.0.0.1:5000** trên trình duyệt
-2. **Chọn bảng** từ dropdown (danh sách tự động load từ MotherDuck)
-3. Điều chỉnh **số dòng** muốn hiển thị (mặc định 100)
-4. Bật/tắt **checkbox "Mask dữ liệu nhạy cảm"** tùy nhu cầu
-5. Nhấn **📥 Load Data**
-6. *(Tùy chọn)* Nhấn **📐 Xem Schema** để xem cấu trúc bảng
-
-### Các bảng có trong OPC Database
-
-| Bảng | Mô tả |
-|------|--------|
-| `ai_use_disclosure` | Khai báo sử dụng AI |
-| `cashflow` | Dòng tiền |
-| `contracts` | Hợp đồng |
-| `customers` | Khách hàng |
-| `data_class` | Phân loại dữ liệu |
-| `design_log` | Log thiết kế |
-| `invoices` | Hóa đơn |
-| `masking_examples` | Ví dụ masking dữ liệu |
-| `opc_profile` | Hồ sơ OPC |
-| `orders` | Đơn hàng |
-| `products` | Sản phẩm |
-| `risk_rules` | Quy tắc rủi ro |
-
----
-
-## ⚙️ Cấu hình nâng cao
-
-### Thêm quy tắc masking mới
-
-Mở file `functions.py`, thêm pattern vào `SENSITIVE_PATTERNS` và hàm mask tương ứng vào `MASK_FUNCTIONS`:
-
-```python
-# Thêm pattern nhận diện cột
-SENSITIVE_PATTERNS = {
-    ...
-    "my_type": r"(?i)(my_column_name|other_column)",
-}
-
-# Thêm hàm mask
-def _mask_my_type(value: str) -> str:
-    return value[:3] + "***"
-
-MASK_FUNCTIONS = {
-    ...
-    "my_type": _mask_my_type,
-}
+```text
+http://127.0.0.1:5000
 ```
 
-## 📝 License
+Không mở trực tiếp `web/templates/index.html` bằng `file:///...` vì frontend cần gọi API từ Flask server.
 
-MIT License
+## Cách demo
+
+1. Mở `http://127.0.0.1:5000`.
+2. Chọn một opportunity/hợp đồng ở khu vực Opportunity.
+3. Xem dữ liệu đầu vào: Contract, Customer, Order, Financial Snapshot.
+4. Nhấn Start Workflow.
+5. Duyệt từng bước agent theo các human gate trên UI.
+6. Xem Decision Dashboard: recommendation, reasons, conditions, confidence, risk và sản phẩm ngân hàng đề xuất.
+
+## API endpoints
+
+```text
+GET  /api/tables
+GET  /api/table/<table_name>?limit=100&mask=true
+GET  /api/opportunities
+GET  /api/opportunity/<contract_id>/decision
+POST /api/workflow/start
+POST /api/workflow/<workflow_id>/ai-reasoning
+POST /api/workflow/<workflow_id>/risk
+POST /api/workflow/<workflow_id>/decision
+```
+
+## Kiểm tra nhanh
+
+Kiểm tra syntax:
+
+```powershell
+python -m py_compile main.py connector.py opportunity_agent.py agents\data_finance_agent.py agents\risk_compliance_agent.py agents\decision_partner_agent.py
+```
+
+Kiểm tra server sau khi chạy:
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:5000/api/tables
+```
+
+## Lỗi thường gặp
+
+Không load được dữ liệu:
+
+- Kiểm tra Flask server đã chạy chưa.
+- Kiểm tra URL là `http://127.0.0.1:5000`.
+- Kiểm tra `MOTHERDUCK_TOKEN` và `MOTHERDUCK_DATABASE` trong `.env`.
+- Kiểm tra token MotherDuck còn hiệu lực.
+
+AI reasoning không chạy:
+
+- Kiểm tra `GROQ_API_KEY`.
+- Kiểm tra `GROQ_BASE_URL=https://api.groq.com`.
+- Kiểm tra quota/rate limit của API key.
+- Nếu không có key, một số phần có thể chạy theo fallback hoặc trả lỗi provider.
+
+Neo4j không query được:
+
+- Kiểm tra `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`.
+- Nếu chưa cấu hình Neo4j, workflow vẫn dùng được knowledge context cục bộ.
+
+## Lệnh chạy tóm tắt
+
+```powershell
+cd D:\MIS_TALENT\OPC-multi-agents-system
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirement.txt
+Copy-Item .env.example .env
+python main.py
+```
