@@ -1,0 +1,9 @@
+duckdb
+python-dotenv
+pandas
+openpyxl
+sqlalchemy
+langchain
+langchain-openai
+httpx
+flask
